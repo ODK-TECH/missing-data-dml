@@ -1,4 +1,4 @@
-## run-all.R ---------------------------------------------------------------
+## run-all.R
 ## Runs both scenarios and the sensitivity sweep, then writes every result and
 ## figure to disk. Call it from the repository root:
 ##
@@ -26,7 +26,7 @@ dir.create(config$figures_dir, showWarnings = FALSE, recursive = TRUE)
 
 started <- Sys.time()
 
-## Scenario A ---------------------------------------------------------------
+## Scenario A 
 raw_a <- run_scenario_a(config)
 saveRDS(raw_a, file.path(config$results_dir, "scenario-a-raw.rds"))
 
@@ -44,7 +44,7 @@ save_plot(plot_coverage(summ_a, "Scenario A: interval coverage",
                         estimator_levels_a),
           file.path(config$figures_dir, "scenario-a-coverage.png"))
 
-## Scenario B ---------------------------------------------------------------
+## Scenario B 
 raw_b <- run_scenario_b(config)
 saveRDS(raw_b, file.path(config$results_dir, "scenario-b-raw.rds"))
 
@@ -64,7 +64,7 @@ save_plot(plot_coverage(summ_b, "Scenario B: interval coverage",
           file.path(config$figures_dir, "scenario-b-coverage.png"),
           height = 8)
 
-## Sensitivity --------------------------------------------------------------
+## Sensitivity 
 sens <- run_sensitivity(config)
 saveRDS(sens, file.path(config$results_dir, "sensitivity-raw.rds"))
 
@@ -72,7 +72,7 @@ save_plot(plot_sensitivity(sens, truth_a[["theta"]]),
           file.path(config$figures_dir, "sensitivity-delta.png"),
           width = 7, height = 5)
 
-## Provenance ---------------------------------------------------------------
+## Provenance 
 writeLines(
   c(
     paste("Run completed:", format(Sys.time(), tz = "UTC", usetz = TRUE)),
