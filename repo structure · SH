@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+#
+# fix-repo-structure.sh
+#
+# Moves the flat files in ODK-TECH/missing-data-dml into the directory layout
+# the code expects, writes the .gitignore that the web uploader skipped, and
+# restores the two .gitkeep placeholders.
+#
+# Usage:
+#   bash fix-repo-structure.sh            clone into ./missing-data-dml and fix
+#   bash fix-repo-structure.sh .          fix the clone you are already inside
+#
+# Set DRY_RUN=1 to stop before committing and pushing.
+
+set -euo pipefail
+
+REPO_URL="https://github.com/ODK-TECH/missing-data-dml.git"
+TARGET="${1:-missing-data-dml}"
+DRY_RUN="${DRY_RUN:-0}"
+
+say() { printf '\n== %s\n' "$1"; }
+
+## 1. Get a working copy ----------------------------------------------------
+if [ "$TARGET" = "." ]; then
+  git rev-parse --git-dir >/dev/null 2>&1 || {
+    echo "Not inside a git repository. Run without arguments to clone."; exit 1;
+  }
+  say "Using the clone in $(pwd)"
+else
+  if [ -d "$TARGET/.git" ]; then
+    say "Reusing existing clone at $TARGET"
+    cd "$TARGET"
+    git pull --ff-only
+  else
+    say "Cloning into $TARGET"
+    git clone "$REPO_URL" "$TARGET"
+    cd "$TARGET"
+  fi
+fi
+
+say "Before"
+git ls-files
+
+## 2. Move files into their directories -------------------------------------
+mkdir -p R scripts tests report results figures
+
+move_into() {
+  dir="$1"; shift
+  for f in "$@"; do
+    if [ -f "$f" ]; then
+      git mv "$f" "$dir/$f"
+      echo "  moved $f -> $dir/$f"
+    elif [ -f "$dir/$f" ]; then
+      echo "  already in place: $dir/$f"
+    else
+      echo "  MISSING: $f"
+    fi
+  done
+}
+
+say "Moving files"
+move_into R 00-config.R utils.R 01-dgp.R 02-estimators-mean.R \
+            03-estimators-coef.R 04-run-scenario-a.R 05-run-scenario-b.R \
+            06-summarise.R
+move_into scripts install-deps.R run-all.R
+move_into tests test-smoke.R
+move_into report report.Rmd
+
+## 3. Restore the files the uploader dropped --------------------------------
+say "Restoring .gitignore and .gitkeep placeholders"
+
+if [ -f .gitkeep ]; then
+  git rm -q --cached .gitkeep 2>/dev/null || true
+  rm -f .gitkeep
+  echo "  removed stray root .gitkeep"
+fi
+
+: > results/.gitkeep
+: > figures/.gitkeep
+
+cat > .gitignore <<'GITIGNORE'
+# R
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# Generated output
+results/*.rds
+results/*.csv
+results/session-info.txt
+figures/*.png
+figures/*.pdf
+report/report.html
+report/report.pdf
+report/*_files/
+report/*_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+GITIGNORE
+
+git add -f .gitignore results/.gitkeep figures/.gitkeep
+git add -A
+
+## 4. Check before committing -----------------------------------------------
+say "Staged changes"
+git status --short
+
+expected="R/00-config.R
+R/01-dgp.R
+R/02-estimators-mean.R
+R/03-estimators-coef.R
+R/04-run-scenario-a.R
+R/05-run-scenario-b.R
+R/06-summarise.R
+R/utils.R
+scripts/install-deps.R
+scripts/run-all.R
+tests/test-smoke.R
+report/report.Rmd
+README.md
+LICENSE
+Makefile
+.gitignore
+results/.gitkeep
+figures/.gitkeep"
+
+say "Checking every expected path is staged"
+missing=0
+while IFS= read -r path; do
+  if git ls-files --cached --others --exclude-standard | grep -qx "$path"; then
+    printf '  ok      %s\n' "$path"
+  else
+    printf '  MISSING %s\n' "$path"
+    missing=$((missing + 1))
+  fi
+done <<< "$expected"
+
+if [ "$missing" -gt 0 ]; then
+  echo
+  echo "$missing path(s) missing. Nothing committed. Fix those first."
+  exit 1
+fi
+
+if [ "$DRY_RUN" = "1" ]; then
+  say "DRY_RUN set. Stopping before commit."
+  exit 0
+fi
+
+## 5. Commit and push --------------------------------------------------------
+say "Committing"
+git commit -m "Restore directory structure and add .gitignore"
+
+say "Pushing"
+git push
+
+say "After"
+git ls-files
+
+echo
+echo "Done. Check that R/, scripts/, tests/ and report/ appear on GitHub."
