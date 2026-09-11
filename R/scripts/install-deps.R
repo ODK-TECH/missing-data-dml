@@ -1,4 +1,4 @@
-## install-deps.R ----------------------------------------------------------
+## install-deps.R 
 ## Installs the packages this study needs. Run once:
 ##
 ##   Rscript scripts/install-deps.R
