@@ -1,8 +1,8 @@
-## utils.R -----------------------------------------------------------------
+## utils.R 
 ## Shared helpers: seed handling, Rubin's rules, interval construction and
 ## the Monte Carlo summaries used to judge every estimator.
 
-## Seeds ---------------------------------------------------------------------
+## Seeds
 
 #' Draw one seed per replication
 #'
@@ -13,7 +13,7 @@ draw_seeds <- function(n_sim, base_seed) {
   sample.int(.Machine$integer.max, n_sim)
 }
 
-## Rubin's rules -------------------------------------------------------------
+## Rubin's rules 
 
 #' Combine estimates across multiply imputed datasets
 #'
@@ -58,7 +58,7 @@ rubin_rules <- function(estimates, variances, df_com = Inf, level = 0.95) {
   )
 }
 
-## Intervals -----------------------------------------------------------------
+## Intervals 
 
 #' Wald interval on the normal scale
 wald_ci <- function(estimate, se, level = 0.95) {
@@ -84,7 +84,7 @@ as_result <- function(estimator, target, fit) {
   )
 }
 
-## Monte Carlo summaries -----------------------------------------------------
+## Monte Carlo summaries 
 
 #' Performance measures with Monte Carlo standard errors
 #'
@@ -134,7 +134,7 @@ summarise_performance <- function(results, truth) {
   out[order(out$mechanism, out$target, out$estimator), ]
 }
 
-## Execution -----------------------------------------------------------------
+## Execution 
 
 #' Run replications, in parallel where the platform allows it
 run_replications <- function(seeds, fun, n_cores = 1L) {
