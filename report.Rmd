@@ -1,0 +1,150 @@
+---
+title: "Multiple imputation and debiased machine learning under MAR and MNAR"
+subtitle: "A simulation study"
+author: "Dominic Obeng Koranteng"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    df_print: kable
+---
+
+```{r setup, include = FALSE}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", fig.width = 9, fig.height = 6)
+```
+
+```{r load}
+suppressPackageStartupMessages(library(ggplot2))
+source("R/00-config.R")
+source("R/utils.R")
+source("R/06-summarise.R")
+
+results_exist <- file.exists("results/scenario-a-raw.rds")
+if (!results_exist) {
+  knitr::opts_chunk$set(eval = FALSE)
+}
+
+raw_a  <- readRDS("results/scenario-a-raw.rds")
+raw_b  <- readRDS("results/scenario-b-raw.rds")
+sens   <- readRDS("results/sensitivity-raw.rds")
+
+summ_a <- summarise_performance(raw_a, truth_a)
+summ_b <- summarise_performance(raw_b, truth_b)
+
+n_rep_a <- max(summ_a$n_rep)
+```
+
+# What this study asks
+
+Three questions drive the design.
+
+1. When an outcome is missing at random and the conditional mean is nonlinear, how much does a misspecified imputation model cost in bias and in interval coverage?
+2. Does a cross-fitted debiased machine learning estimator recover what a correctly specified parametric analysis recovers, without the analyst having to know the functional form?
+3. When missingness depends on the unobserved values, how far from missing at random do the data have to be before the answer changes?
+
+Coverage of nominal 95 per cent intervals carries most of the weight in what follows. Bias alone flatters methods that understate uncertainty, and mean imputation is the clearest example of that trap.
+
+# Design
+
+**Scenario A.** The outcome is missing, the covariates are complete, and the target is $\theta = E[Y]$.
+
+$$Y = 1 + X_1 + 0.5 X_2 - 0.75 X_1 X_3 + 0.5 X_1^2 + \varepsilon$$
+
+with $X_1, X_2 \sim N(0,1)$, $X_3 \sim \text{Bernoulli}(0.5)$ and $\varepsilon \sim N(0,1)$, all independent. This gives $\theta_0 = 1.5$ in closed form. Three mechanisms generate the response indicator $R$: MCAR with a constant probability of 0.7, MAR through a logistic model in $X$, and MNAR through a logistic model that includes $Y$ itself.
+
+**Scenario B.** A covariate is missing and the target is the coefficient vector of the substantive model
+
+$$Y = 1 + X_1 + 0.5 X_2 + 0.8 X_1 X_2 + \varepsilon,$$
+
+where $X_1$ goes missing with probability depending on $Y$ and $X_2$. The interaction is what makes this scenario worth running: an imputation model for $X_1$ built from main effects of $Y$ and $X_2$ is uncongenial with the analysis model.
+
+Each scenario runs `r if (results_exist) n_rep_a else "n_sim"` replications at n = `r config$n`, with `r config$m_imp` imputations per multiply imputed analysis and `r config$n_folds`-fold cross-fitting for the machine learning estimator.
+
+# Scenario A: missing outcome
+
+```{r table-a}
+cols <- c("mechanism", "estimator", "bias", "bias_mcse", "emp_sd",
+          "mean_se", "rmse", "coverage", "cov_mcse")
+knitr::kable(
+  order_estimators(summ_a, estimator_levels_a)[, cols],
+  digits = 3,
+  caption = "Scenario A. Bias, spread and coverage by mechanism and estimator."
+)
+```
+
+```{r fig-a-bias}
+plot_bias(summ_a, "Scenario A: bias in the estimated mean of Y",
+          estimator_levels_a)
+```
+
+```{r fig-a-coverage}
+plot_coverage(summ_a, "Scenario A: interval coverage", estimator_levels_a)
+```
+
+## Reading the table
+
+Write your interpretation here after the first full run. Points to check against the numbers rather than assume:
+
+- Under MCAR, complete-case analysis should be unbiased and its intervals should cover. Mean imputation should match it on the point estimate and fail on coverage, because filling in a constant shrinks the variance that the naive standard error uses.
+- Under MAR, complete-case analysis should be biased. The size of that bias is set by how strongly the response probability depends on the covariates.
+- Under MAR, the imputation model with main effects only should carry visible bias, while the version including the quadratic and interaction terms should not. This is the cost of getting the imputation model wrong when the missingness assumption is right.
+- The augmented IPW estimator should stay close to the truth even with its misspecified outcome model, since the propensity model is correct. That is double robustness doing its work.
+- The debiased machine learning estimator should match the correctly specified parametric analyses without being told the functional form. Compare its empirical standard deviation against the parametric estimators to see what the flexibility costs in efficiency.
+- Under MNAR, every estimator here should be biased, including the ones that were right under MAR. No amount of flexibility in the nuisance models fixes an identification failure.
+
+# Scenario B: missing covariate and congeniality
+
+```{r table-b}
+knitr::kable(
+  order_estimators(summ_b, estimator_levels_b)[, c(
+    "estimator", "target", "bias", "bias_mcse", "emp_sd", "mean_se",
+    "rmse", "coverage", "cov_mcse"
+  )],
+  digits = 3,
+  caption = "Scenario B. Performance by coefficient."
+)
+```
+
+```{r fig-b-bias, fig.height = 8}
+plot_bias(summ_b, "Scenario B: bias in the substantive model coefficients",
+          estimator_levels_b)
+```
+
+```{r fig-b-coverage, fig.height = 8}
+plot_coverage(summ_b, "Scenario B: interval coverage", estimator_levels_b)
+```
+
+## Reading the table
+
+The interaction coefficient `x1:x2` is the one to watch. Standard multiple imputation draws $X_1$ from a model that has no interaction in it, so the imputed values are pulled toward a relationship that does not vary with $X_2$. Substantive model compatible imputation draws from a distribution proportional to $f(Y \mid X_1, X_2) f(X_1 \mid X_2)$, which keeps the analysis model inside the imputation step.
+
+# Sensitivity analysis under MNAR
+
+```{r fig-sens, fig.width = 7, fig.height = 5}
+plot_sensitivity(sens, truth_a[["theta"]])
+```
+
+Delta-adjusted imputation shifts every imputed outcome by a fixed amount before analysis. At $\delta = 0$ the estimate is the MAR answer. The curve shows which departure from MAR would be needed to move the estimate to the truth, which is the honest way to report an MNAR problem: state the assumption, then show what rides on it.
+
+# Reproducibility
+
+```{r session}
+if (file.exists("results/session-info.txt")) {
+  cat(readLines("results/session-info.txt"), sep = "\n")
+}
+```
+
+# References
+
+- Rubin, D. B. (1976). Inference and missing data. *Biometrika* 63(3), 581-592.
+- Little, R. J. A. and Rubin, D. B. (2019). *Statistical Analysis with Missing Data*, 3rd edition. Wiley.
+- Meng, X.-L. (1994). Multiple-imputation inferences with uncongenial sources of input. *Statistical Science* 9(4), 538-558.
+- Bartlett, J. W., Seaman, S. R., White, I. R. and Carpenter, J. R. (2015). Multiple imputation of covariates by fully conditional specification: accommodating the substantive model. *Statistical Methods in Medical Research* 24(4), 462-487.
+- van Buuren, S. and Groothuis-Oudshoorn, K. (2011). mice: multivariate imputation by chained equations in R. *Journal of Statistical Software* 45(3).
+- Chernozhukov, V., Chetverikov, D., Demirer, M., Duflo, E., Hansen, C., Newey, W. and Robins, J. (2018). Double/debiased machine learning for treatment and structural parameters. *The Econometrics Journal* 21(1), C1-C68.
+- Kennedy, E. H. (2024). Semiparametric doubly robust targeted double machine learning: a review. In *Handbook of Statistical Methods for Precision Medicine*.
+- Morris, T. P., White, I. R. and Crowther, M. J. (2019). Using simulation studies to evaluate statistical methods. *Statistics in Medicine* 38(11), 2074-2102.
